@@ -37,19 +37,19 @@ export default {
     },
   },
   github: () => {
-    return "https://github.com/Mintplex-Labs/anything-llm";
+    return null;
   },
   discord: () => {
-    return "https://discord.com/invite/6UyHPeGZAC";
+    return null;
   },
   docs: () => {
-    return "https://docs.useanything.com";
+    return null;
   },
   mailToMintplex: () => {
-    return "mailto:team@mintplexlabs.com";
+    return null;
   },
   hosting: () => {
-    return "https://my.mintplexlabs.com/aio-checkout?product=anythingllm";
+    return return null;
   },
   workspace: {
     chat: (slug) => {

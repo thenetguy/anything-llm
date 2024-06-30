@@ -15,6 +15,8 @@ const {
   validWorkspaceSlug,
 } = require("../utils/middleware/validWorkspace");
 const { writeResponseChunk } = require("../utils/helpers/chat/responses");
+const { WorkspaceThread } = require("../models/workspaceThread");
+const truncate = require("truncate");
 
 function chatEndpoints(app) {
   if (!app) return;
@@ -92,7 +94,7 @@ function chatEndpoints(app) {
           multiUserMode: multiUserMode(response),
           LLMSelection: process.env.LLM_PROVIDER || "openai",
           Embedder: process.env.EMBEDDING_ENGINE || "inherit",
-          VectorDbSelection: process.env.VECTOR_DB || "pinecone",
+          VectorDbSelection: process.env.VECTOR_DB || "lancedb",
         });
 
         await EventLogs.logEvent(
@@ -196,11 +198,29 @@ function chatEndpoints(app) {
           user,
           thread
         );
+
+        // If thread was renamed emit event to frontend via special `action` response.
+        await WorkspaceThread.autoRenameThread({
+          thread,
+          workspace,
+          user,
+          newName: truncate(message, 22),
+          onRename: (thread) => {
+            writeResponseChunk(response, {
+              action: "rename_thread",
+              thread: {
+                slug: thread.slug,
+                name: thread.name,
+              },
+            });
+          },
+        });
+
         await Telemetry.sendTelemetry("sent_chat", {
           multiUserMode: multiUserMode(response),
           LLMSelection: process.env.LLM_PROVIDER || "openai",
           Embedder: process.env.EMBEDDING_ENGINE || "inherit",
-          VectorDbSelection: process.env.VECTOR_DB || "pinecone",
+          VectorDbSelection: process.env.VECTOR_DB || "lancedb",
         });
 
         await EventLogs.logEvent(

@@ -1,7 +1,7 @@
 process.env.NODE_ENV === "development"
   ? require("dotenv").config({ path: `.env.${process.env.NODE_ENV}` })
   : require("dotenv").config();
-const { viewLocalFiles, normalizePath } = require("../utils/files");
+const { viewLocalFiles, normalizePath, isWithin } = require("../utils/files");
 const { purgeDocument, purgeFolder } = require("../utils/files/purgeDocument");
 const { getVectorDbClass } = require("../utils/helpers");
 const { updateENV, dumpENV } = require("../utils/helpers/updateENV");
@@ -36,6 +36,7 @@ const { WorkspaceChats } = require("../models/workspaceChats");
 const {
   flexUserRoleValid,
   ROLES,
+  isMultiUserSetup,
 } = require("../utils/middleware/multiUserProtected");
 const { fetchPfp, determinePfpFilepath } = require("../utils/files/pfp");
 const {
@@ -44,6 +45,12 @@ const {
 } = require("../utils/helpers/chat/convertTo");
 const { EventLogs } = require("../models/eventLogs");
 const { CollectorApi } = require("../utils/collectorApi");
+const {
+  recoverAccount,
+  resetPassword,
+  generateRecoveryCodes,
+} = require("../utils/PasswordRecovery");
+const { SlashCommandPresets } = require("../models/slashCommandsPresets");
 
 function systemEndpoints(app) {
   if (!app) return;
@@ -59,7 +66,7 @@ function systemEndpoints(app) {
   app.get("/env-dump", async (_, response) => {
     if (process.env.NODE_ENV !== "production")
       return response.sendStatus(200).end();
-    await dumpENV();
+    dumpENV();
     response.sendStatus(200).end();
   });
 
@@ -103,7 +110,7 @@ function systemEndpoints(app) {
 
       if (await SystemSettings.isMultiUserMode()) {
         const { username, password } = reqBody(request);
-        const existingUser = await User.get({ username: String(username) });
+        const existingUser = await User._get({ username: String(username) });
 
         if (!existingUser) {
           await EventLogs.logEvent(
@@ -174,9 +181,27 @@ function systemEndpoints(app) {
           existingUser?.id
         );
 
+        // Check if the user has seen the recovery codes
+        if (!existingUser.seen_recovery_codes) {
+          const plainTextCodes = await generateRecoveryCodes(existingUser.id);
+
+          // Return recovery codes to frontend
+          response.status(200).json({
+            valid: true,
+            user: User.filterFields(existingUser),
+            token: makeJWT(
+              { id: existingUser.id, username: existingUser.username },
+              "30d"
+            ),
+            message: null,
+            recoveryCodes: plainTextCodes,
+          });
+          return;
+        }
+
         response.status(200).json({
           valid: true,
-          user: existingUser,
+          user: User.filterFields(existingUser),
           token: makeJWT(
             { id: existingUser.id, username: existingUser.username },
             "30d"
@@ -220,6 +245,55 @@ function systemEndpoints(app) {
       response.sendStatus(500).end();
     }
   });
+
+  app.post(
+    "/system/recover-account",
+    [isMultiUserSetup],
+    async (request, response) => {
+      try {
+        const { username, recoveryCodes } = reqBody(request);
+        const { success, resetToken, error } = await recoverAccount(
+          username,
+          recoveryCodes
+        );
+
+        if (success) {
+          response.status(200).json({ success, resetToken });
+        } else {
+          response.status(400).json({ success, message: error });
+        }
+      } catch (error) {
+        console.error("Error recovering account:", error);
+        response
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
+      }
+    }
+  );
+
+  app.post(
+    "/system/reset-password",
+    [isMultiUserSetup],
+    async (request, response) => {
+      try {
+        const { token, newPassword, confirmPassword } = reqBody(request);
+        const { success, message, error } = await resetPassword(
+          token,
+          newPassword,
+          confirmPassword
+        );
+
+        if (success) {
+          response.status(200).json({ success, message });
+        } else {
+          response.status(400).json({ success, error });
+        }
+      } catch (error) {
+        console.error("Error resetting password:", error);
+        response.status(500).json({ success: false, message: error.message });
+      }
+    }
+  );
 
   app.get(
     "/system/system-vectors",
@@ -342,7 +416,6 @@ function systemEndpoints(app) {
           false,
           response?.locals?.user?.id
         );
-        if (process.env.NODE_ENV === "production") await dumpENV();
         response.status(200).json({ newValues, error });
       } catch (e) {
         console.log(e.message, e);
@@ -362,15 +435,21 @@ function systemEndpoints(app) {
           return;
         }
 
+        let error = null;
         const { usePassword, newPassword } = reqBody(request);
-        const { error } = await updateENV(
-          {
-            AuthToken: usePassword ? newPassword : "",
-            JWTSecret: usePassword ? v4() : "",
-          },
-          true
-        );
-        if (process.env.NODE_ENV === "production") await dumpENV();
+        if (!usePassword) {
+          // Password is being disabled so directly unset everything to bypass validation.
+          process.env.AUTH_TOKEN = "";
+          process.env.JWT_SECRET = "";
+        } else {
+          error = await updateENV(
+            {
+              AuthToken: newPassword,
+              JWTSecret: v4(),
+            },
+            true
+          )?.error;
+        }
         response.status(200).json({ success: !error, error });
       } catch (e) {
         console.log(e.message, e);
@@ -400,19 +479,16 @@ function systemEndpoints(app) {
         });
         await SystemSettings._updateSettings({
           multi_user_mode: true,
-          users_can_delete_workspaces: false,
           limit_user_messages: false,
           message_limit: 25,
         });
 
         await updateENV(
           {
-            AuthToken: "",
             JWTSecret: process.env.JWT_SECRET || v4(),
           },
           true
         );
-        if (process.env.NODE_ENV === "production") await dumpENV();
         await Telemetry.sendTelemetry("enabled_multi_user_mode", {
           multiUserMode: true,
         });
@@ -445,17 +521,24 @@ function systemEndpoints(app) {
       const defaultFilename = getDefaultFilename();
       const logoPath = await determineLogoFilepath(defaultFilename);
       const { found, buffer, size, mime } = fetchLogo(logoPath);
+
       if (!found) {
         response.sendStatus(204).end();
         return;
       }
 
+      const currentLogoFilename = await SystemSettings.currentLogoFilename();
       response.writeHead(200, {
+        "Access-Control-Expose-Headers":
+          "Content-Disposition,X-Is-Custom-Logo,Content-Type,Content-Length",
         "Content-Type": mime || "image/png",
         "Content-Disposition": `attachment; filename=${path.basename(
           logoPath
         )}`,
         "Content-Length": size,
+        "X-Is-Custom-Logo":
+          currentLogoFilename !== null &&
+          currentLogoFilename !== defaultFilename,
       });
       response.end(Buffer.from(buffer, "base64"));
       return;
@@ -488,6 +571,22 @@ function systemEndpoints(app) {
       response.status(200).json({ supportEmail: supportEmail });
     } catch (error) {
       console.error("Error fetching support email:", error);
+      response.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // No middleware protection in order to get this on the login page
+  app.get("/system/custom-app-name", async (_, response) => {
+    try {
+      const customAppName =
+        (
+          await SystemSettings.get({
+            label: "custom_app_name",
+          })
+        )?.value ?? null;
+      response.status(200).json({ customAppName: customAppName });
+    } catch (error) {
+      console.error("Error fetching custom app name:", error);
       response.status(500).json({ message: "Internal server error" });
     }
   });
@@ -541,11 +640,13 @@ function systemEndpoints(app) {
         const userRecord = await User.get({ id: user.id });
         const oldPfpFilename = userRecord.pfpFilename;
         if (oldPfpFilename) {
+          const storagePath = path.join(__dirname, "../storage/assets/pfp");
           const oldPfpPath = path.join(
-            __dirname,
-            `../storage/assets/pfp/${normalizePath(userRecord.pfpFilename)}`
+            storagePath,
+            normalizePath(userRecord.pfpFilename)
           );
-
+          if (!isWithin(path.resolve(storagePath), path.resolve(oldPfpPath)))
+            throw new Error("Invalid path name");
           if (fs.existsSync(oldPfpPath)) fs.unlinkSync(oldPfpPath);
         }
 
@@ -574,13 +675,14 @@ function systemEndpoints(app) {
         const userRecord = await User.get({ id: user.id });
         const oldPfpFilename = userRecord.pfpFilename;
 
-        console.log("oldPfpFilename", oldPfpFilename);
         if (oldPfpFilename) {
+          const storagePath = path.join(__dirname, "../storage/assets/pfp");
           const oldPfpPath = path.join(
-            __dirname,
-            `../storage/assets/pfp/${normalizePath(oldPfpFilename)}`
+            storagePath,
+            normalizePath(oldPfpFilename)
           );
-
+          if (!isWithin(path.resolve(storagePath), path.resolve(oldPfpPath)))
+            throw new Error("Invalid path name");
           if (fs.existsSync(oldPfpPath)) fs.unlinkSync(oldPfpPath);
         }
 
@@ -669,33 +771,6 @@ function systemEndpoints(app) {
       } catch (error) {
         console.error("Error processing the logo removal:", error);
         response.status(500).json({ message: "Error removing the logo." });
-      }
-    }
-  );
-
-  app.get(
-    "/system/can-delete-workspaces",
-    [validatedRequest],
-    async function (request, response) {
-      try {
-        if (!response.locals.multiUserMode) {
-          return response.status(200).json({ canDelete: true });
-        }
-
-        const user = await userFromSession(request, response);
-        if ([ROLES.admin, ROLES.manager].includes(user?.role)) {
-          return response.status(200).json({ canDelete: true });
-        }
-
-        const canDelete = await SystemSettings.canDeleteWorkspaces();
-        response.status(200).json({ canDelete });
-      } catch (error) {
-        console.error("Error fetching can delete workspaces:", error);
-        response.status(500).json({
-          success: false,
-          message: "Internal server error",
-          canDelete: false,
-        });
       }
     }
   );
@@ -840,7 +915,7 @@ function systemEndpoints(app) {
     [validatedRequest, flexUserRoleValid([ROLES.admin])],
     async (request, response) => {
       try {
-        const { offset = 0, limit = 20 } = reqBody(request);
+        const { offset = 0, limit = 10 } = reqBody(request);
         const logs = await EventLogs.whereWithData({}, limit, offset * limit, {
           id: "desc",
         });
@@ -903,7 +978,9 @@ function systemEndpoints(app) {
     async (request, response) => {
       try {
         const { id } = request.params;
-        await WorkspaceChats.delete({ id: Number(id) });
+        Number(id) === -1
+          ? await WorkspaceChats.delete({}, true)
+          : await WorkspaceChats.delete({ id: Number(id) });
         response.json({ success: true, error: null });
       } catch (e) {
         console.error(e);
@@ -951,7 +1028,7 @@ function systemEndpoints(app) {
 
       const updates = {};
       if (username) {
-        updates.username = String(username);
+        updates.username = User.validations.username(String(username));
       }
       if (password) {
         updates.password = String(password);
@@ -971,6 +1048,111 @@ function systemEndpoints(app) {
       response.sendStatus(500).end();
     }
   });
+
+  app.get(
+    "/system/slash-command-presets",
+    [validatedRequest, flexUserRoleValid([ROLES.all])],
+    async (request, response) => {
+      try {
+        const user = await userFromSession(request, response);
+        const userPresets = await SlashCommandPresets.getUserPresets(user?.id);
+        response.status(200).json({ presets: userPresets });
+      } catch (error) {
+        console.error("Error fetching slash command presets:", error);
+        response.status(500).json({ message: "Internal server error" });
+      }
+    }
+  );
+
+  app.post(
+    "/system/slash-command-presets",
+    [validatedRequest, flexUserRoleValid([ROLES.all])],
+    async (request, response) => {
+      try {
+        const user = await userFromSession(request, response);
+        const { command, prompt, description } = reqBody(request);
+        const presetData = {
+          command: SlashCommandPresets.formatCommand(String(command)),
+          prompt: String(prompt),
+          description: String(description),
+        };
+
+        const preset = await SlashCommandPresets.create(user?.id, presetData);
+        if (!preset) {
+          return response
+            .status(500)
+            .json({ message: "Failed to create preset" });
+        }
+        response.status(201).json({ preset });
+      } catch (error) {
+        console.error("Error creating slash command preset:", error);
+        response.status(500).json({ message: "Internal server error" });
+      }
+    }
+  );
+
+  app.post(
+    "/system/slash-command-presets/:slashCommandId",
+    [validatedRequest, flexUserRoleValid([ROLES.all])],
+    async (request, response) => {
+      try {
+        const user = await userFromSession(request, response);
+        const { slashCommandId } = request.params;
+        const { command, prompt, description } = reqBody(request);
+
+        // Valid user running owns the preset if user session is valid.
+        const ownsPreset = await SlashCommandPresets.get({
+          userId: user?.id ?? null,
+          id: Number(slashCommandId),
+        });
+        if (!ownsPreset)
+          return response.status(404).json({ message: "Preset not found" });
+
+        const updates = {
+          command: SlashCommandPresets.formatCommand(String(command)),
+          prompt: String(prompt),
+          description: String(description),
+        };
+
+        const preset = await SlashCommandPresets.update(
+          Number(slashCommandId),
+          updates
+        );
+        if (!preset) return response.sendStatus(422);
+        response.status(200).json({ preset: { ...ownsPreset, ...updates } });
+      } catch (error) {
+        console.error("Error updating slash command preset:", error);
+        response.status(500).json({ message: "Internal server error" });
+      }
+    }
+  );
+
+  app.delete(
+    "/system/slash-command-presets/:slashCommandId",
+    [validatedRequest, flexUserRoleValid([ROLES.all])],
+    async (request, response) => {
+      try {
+        const { slashCommandId } = request.params;
+        const user = await userFromSession(request, response);
+
+        // Valid user running owns the preset if user session is valid.
+        const ownsPreset = await SlashCommandPresets.get({
+          userId: user?.id ?? null,
+          id: Number(slashCommandId),
+        });
+        if (!ownsPreset)
+          return response
+            .status(403)
+            .json({ message: "Failed to delete preset" });
+
+        await SlashCommandPresets.delete(Number(slashCommandId));
+        response.sendStatus(204);
+      } catch (error) {
+        console.error("Error deleting slash command preset:", error);
+        response.status(500).json({ message: "Internal server error" });
+      }
+    }
+  );
 }
 
 module.exports = { systemEndpoints };

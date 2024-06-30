@@ -1,9 +1,9 @@
 const { v4 } = require("uuid");
-const { chatPrompt } = require("../../chats");
 const {
   writeResponseChunk,
   clientAbortedHandler,
 } = require("../../helpers/chat/responses");
+const { NativeEmbedder } = require("../../EmbeddingEngines/native");
 
 class AnthropicLLM {
   constructor(embedder = null, modelPreference = null) {
@@ -24,16 +24,12 @@ class AnthropicLLM {
       user: this.promptWindowLimit() * 0.7,
     };
 
-    if (!embedder)
-      throw new Error(
-        "INVALID ANTHROPIC SETUP. No embedding engine has been set. Go to instance settings and set up an embedding interface to use Anthropic as your LLM."
-      );
-    this.embedder = embedder;
+    this.embedder = embedder ?? new NativeEmbedder();
     this.defaultTemp = 0.7;
   }
 
   streamingEnabled() {
-    return "streamChat" in this && "streamGetChatCompletion" in this;
+    return "streamGetChatCompletion" in this;
   }
 
   promptWindowLimit() {
@@ -50,6 +46,8 @@ class AnthropicLLM {
         return 200_000;
       case "claude-3-haiku-20240307":
         return 200_000;
+      case "claude-3-5-sonnet-20240620":
+        return 200_000;
       default:
         return 100_000; // assume a claude-instant-1.2 model
     }
@@ -63,15 +61,9 @@ class AnthropicLLM {
       "claude-3-opus-20240229",
       "claude-3-sonnet-20240229",
       "claude-3-haiku-20240307",
+      "claude-3-5-sonnet-20240620",
     ];
     return validModels.includes(modelName);
-  }
-
-  // Moderation can be done with Anthropic, but its not really "exact" so we skip it
-  // https://docs.anthropic.com/claude/docs/content-moderation
-  async isSafe(_input = "") {
-    // Not implemented so must be stubbed
-    return { safe: true, reasons: [] };
   }
 
   constructPrompt({
@@ -108,31 +100,6 @@ class AnthropicLLM {
       console.log(error);
       return error;
     }
-  }
-
-  async streamChat(chatHistory = [], prompt, workspace = {}, rawHistory = []) {
-    if (!this.isValidChatCompletionModel(this.model))
-      throw new Error(
-        `Anthropic chat: ${this.model} is not valid for chat completion!`
-      );
-
-    const messages = await this.compressMessages(
-      {
-        systemPrompt: chatPrompt(workspace),
-        userPrompt: prompt,
-        chatHistory,
-      },
-      rawHistory
-    );
-
-    const streamRequest = await this.anthropic.messages.stream({
-      model: this.model,
-      max_tokens: 4096,
-      system: messages[0].content, // Strip out the system message
-      messages: messages.slice(1), // Pop off the system message
-      temperature: Number(workspace?.openAiTemp ?? this.defaultTemp),
-    });
-    return streamRequest;
   }
 
   async streamGetChatCompletion(messages = null, { temperature = 0.7 }) {

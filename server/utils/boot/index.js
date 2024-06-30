@@ -1,4 +1,6 @@
 const { Telemetry } = require("../../models/telemetry");
+const { BackgroundService } = require("../BackgroundWorkers");
+const { EncryptionManager } = require("../EncryptionManager");
 const { CommunicationKey } = require("../comKey");
 const setupTelemetry = require("../telemetry");
 
@@ -12,16 +14,20 @@ function bootSSL(app, port = 3001) {
     const privateKey = fs.readFileSync(process.env.HTTPS_KEY_PATH);
     const certificate = fs.readFileSync(process.env.HTTPS_CERT_PATH);
     const credentials = { key: privateKey, cert: certificate };
+    const server = https.createServer(credentials, app);
 
-    https
-      .createServer(credentials, app)
+    server
       .listen(port, async () => {
         await setupTelemetry();
         new CommunicationKey(true);
+        new EncryptionManager();
+        new BackgroundService().boot();
         console.log(`Primary server in HTTPS mode listening on port ${port}`);
       })
       .on("error", catchSigTerms);
-    return app;
+
+    require("express-ws")(app, server); // Apply same certificate + server for WSS connections
+    return { app, server };
   } catch (e) {
     console.error(
       `\x1b[31m[SSL BOOT FAILED]\x1b[0m ${e.message} - falling back to HTTP boot.`,
@@ -43,10 +49,13 @@ function bootHTTP(app, port = 3001) {
     .listen(port, async () => {
       await setupTelemetry();
       new CommunicationKey(true);
+      new EncryptionManager();
+      new BackgroundService().boot();
       console.log(`Primary server in HTTP mode listening on port ${port}`);
     })
     .on("error", catchSigTerms);
-  return app;
+
+  return { app, server: null };
 }
 
 function catchSigTerms() {

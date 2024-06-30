@@ -14,7 +14,11 @@ class RepoLoader {
   #validGithubUrl() {
     const UrlPattern = require("url-pattern");
     const pattern = new UrlPattern(
-      "https\\://github.com/(:author)/(:project(*))"
+      "https\\://github.com/(:author)/(:project(*))",
+      {
+        // fixes project names with special characters (.github)
+        segmentValueCharset: "a-zA-Z0-9-._~%/+",
+      }
     );
     const match = pattern.match(this.repo);
     if (!match) return false;
@@ -145,6 +149,36 @@ class RepoLoader {
 
     this.branches = [...new Set(branches.flat())];
     return this.#branchPrefSort(this.branches);
+  }
+
+  async fetchSingleFile(sourceFilePath) {
+    try {
+      return fetch(
+        `https://api.github.com/repos/${this.author}/${this.project}/contents/${sourceFilePath}?ref=${this.branch}`,
+        {
+          method: "GET",
+          headers: {
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            ...(!!this.accessToken
+              ? { Authorization: `Bearer ${this.accessToken}` }
+              : {}),
+          },
+        }
+      )
+        .then((res) => {
+          if (res.ok) return res.json();
+          throw new Error(`Failed to fetch from Github API: ${res.statusText}`);
+        })
+        .then((json) => {
+          if (json.hasOwnProperty("status") || !json.hasOwnProperty("content"))
+            throw new Error(json?.message || "missing content");
+          return atob(json.content);
+        });
+    } catch (e) {
+      console.error(`RepoLoader.fetchSingleFile`, e);
+      return null;
+    }
   }
 }
 

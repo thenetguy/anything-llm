@@ -7,6 +7,7 @@ import paths from "@/utils/paths";
 import { AUTH_TIMESTAMP, AUTH_TOKEN, AUTH_USER } from "@/utils/constants";
 import PreLoader from "@/components/Preloader";
 import CTAButton from "@/components/lib/CTAButton";
+import { useTranslation } from "react-i18next";
 
 export default function GeneralSecurity() {
   return (
@@ -29,6 +30,7 @@ function MultiUserMode() {
   const [useMultiUserMode, setUseMultiUserMode] = useState(false);
   const [multiUserModeEnabled, setMultiUserModeEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
+  const { t } = useTranslation();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -90,12 +92,11 @@ function MultiUserMode() {
         <div className="w-full flex flex-col gap-y-1">
           <div className="items-center flex gap-x-4">
             <p className="text-lg leading-6 font-bold text-white">
-              Multi-User Mode
+              {t("multi.title")}
             </p>
           </div>
           <p className="text-xs leading-[18px] font-base text-white text-opacity-60">
-            Set up your instance to support your team by activating Multi-User
-            Mode.
+            {t("multi.description")}
           </p>
         </div>
         {hasChanges && (
@@ -104,7 +105,7 @@ function MultiUserMode() {
               onClick={() => handleSubmit()}
               className="mt-3 mr-0 -mb-20 z-10"
             >
-              {saving ? "Saving..." : "Save changes"}
+              {saving ? t("common.saving") : t("common.save")}
             </CTAButton>
           </div>
         )}
@@ -116,8 +117,8 @@ function MultiUserMode() {
                 <div className="">
                   <label className="mb-2.5 block font-medium text-white">
                     {multiUserModeEnabled
-                      ? "Multi-User Mode is Enabled"
-                      : "Enable Multi-User Mode"}
+                      ? t("multi.enable.is-enable")
+                      : t("multi.enable.enable")}
                   </label>
 
                   <label className="relative inline-flex cursor-pointer items-center">
@@ -140,7 +141,7 @@ function MultiUserMode() {
                         htmlFor="username"
                         className="block mb-3 font-medium text-white"
                       >
-                        Admin account username
+                        {t("multi.enable.username")}
                       </label>
                       <input
                         name="username"
@@ -159,7 +160,7 @@ function MultiUserMode() {
                         htmlFor="password"
                         className="block mb-3 font-medium text-white"
                       >
-                        Admin account password
+                        {t("multi.enable.password")}
                       </label>
                       <input
                         name="password"
@@ -178,9 +179,7 @@ function MultiUserMode() {
             </div>
             <div className="flex items-center justify-between space-x-14">
               <p className="text-white/80 text-xs rounded-lg w-96">
-                By default, you will be the only admin. As an admin you will
-                need to create accounts for all new users or admins. Do not lose
-                your password as only an Admin user can reset passwords.
+                {t("multi.enable.description")}
               </p>
             </div>
           </div>
@@ -190,20 +189,31 @@ function MultiUserMode() {
   );
 }
 
+const PW_REGEX = new RegExp(/^[a-zA-Z0-9_\-!@$%^&*();]+$/);
 function PasswordProtection() {
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [multiUserModeEnabled, setMultiUserModeEnabled] = useState(false);
   const [usePassword, setUsePassword] = useState(false);
   const [loading, setLoading] = useState(true);
+  const { t } = useTranslation();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (multiUserModeEnabled) return false;
+    const form = new FormData(e.target);
+
+    if (!PW_REGEX.test(form.get("password"))) {
+      showToast(
+        `Your password has restricted characters in it. Allowed symbols are _,-,!,@,$,%,^,&,*,(,),;`,
+        "error"
+      );
+      setSaving(false);
+      return;
+    }
 
     setSaving(true);
     setHasChanges(false);
-    const form = new FormData(e.target);
     const data = {
       usePassword,
       newPassword: form.get("password"),
@@ -259,12 +269,11 @@ function PasswordProtection() {
         <div className="w-full flex flex-col gap-y-1">
           <div className="items-center flex gap-x-4">
             <p className="text-lg leading-6 font-bold text-white">
-              Password Protection
+              {t("multi.password.title")}
             </p>
           </div>
           <p className="text-xs leading-[18px] font-base text-white text-opacity-60">
-            Protect your AnythingLLM instance with a password. If you forget
-            this there is no recovery method so ensure you save this password.
+            {t("multi.password.description")}
           </p>
         </div>
         {hasChanges && (
@@ -273,7 +282,7 @@ function PasswordProtection() {
               onClick={() => handleSubmit()}
               className="mt-3 mr-0 -mb-20 z-10"
             >
-              {saving ? "Saving..." : "Save changes"}
+              {saving ? t("common.saving") : t("common.save")}
             </CTAButton>
           </div>
         )}
@@ -284,7 +293,7 @@ function PasswordProtection() {
               <div className="w-full flex flex-col gap-y-4">
                 <div className="">
                   <label className="mb-2.5 block font-medium text-white">
-                    Password Protect Instance
+                    {t("multi.instance.title")}
                   </label>
 
                   <label className="relative inline-flex cursor-pointer items-center">
@@ -304,7 +313,7 @@ function PasswordProtection() {
                         htmlFor="password"
                         className="block mb-3 font-medium text-white"
                       >
-                        Instance password
+                        {t("multi.instance.password")}
                       </label>
                       <input
                         name="password"
@@ -323,9 +332,7 @@ function PasswordProtection() {
             </div>
             <div className="flex items-center justify-between space-x-14">
               <p className="text-white/80 text-xs rounded-lg w-96">
-                By default, you will be the only admin. As an admin you will
-                need to create accounts for all new users or admins. Do not lose
-                your password as only an Admin user can reset passwords.
+                {t("multi.instance.description")}
               </p>
             </div>
           </div>

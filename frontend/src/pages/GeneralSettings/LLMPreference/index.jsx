@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import Sidebar from "@/components/SettingsSidebar";
 import { isMobile } from "react-device-detect";
 import System from "@/models/system";
 import showToast from "@/utils/toast";
 import AnythingLLMIcon from "@/media/logo/anything-llm-icon.png";
 import OpenAiLogo from "@/media/llmprovider/openai.png";
+import GenericOpenAiLogo from "@/media/llmprovider/generic-openai.png";
 import AzureOpenAiLogo from "@/media/llmprovider/azure.png";
 import AnthropicLogo from "@/media/llmprovider/anthropic.png";
 import GeminiLogo from "@/media/llmprovider/gemini.png";
@@ -17,8 +19,13 @@ import HuggingFaceLogo from "@/media/llmprovider/huggingface.png";
 import PerplexityLogo from "@/media/llmprovider/perplexity.png";
 import OpenRouterLogo from "@/media/llmprovider/openrouter.jpeg";
 import GroqLogo from "@/media/llmprovider/groq.png";
+import KoboldCPPLogo from "@/media/llmprovider/koboldcpp.png";
+import TextGenWebUILogo from "@/media/llmprovider/text-generation-webui.png";
+import CohereLogo from "@/media/llmprovider/cohere.png";
+import LiteLLMLogo from "@/media/llmprovider/litellm.png";
 import PreLoader from "@/components/Preloader";
 import OpenAiOptions from "@/components/LLMSelection/OpenAiOptions";
+import GenericOpenAiOptions from "@/components/LLMSelection/GenericOpenAiOptions";
 import AzureAiOptions from "@/components/LLMSelection/AzureAiOptions";
 import AnthropicAiOptions from "@/components/LLMSelection/AnthropicAiOptions";
 import LMStudioOptions from "@/components/LLMSelection/LMStudioOptions";
@@ -32,6 +39,10 @@ import HuggingFaceOptions from "@/components/LLMSelection/HuggingFaceOptions";
 import PerplexityOptions from "@/components/LLMSelection/PerplexityOptions";
 import OpenRouterOptions from "@/components/LLMSelection/OpenRouterOptions";
 import GroqAiOptions from "@/components/LLMSelection/GroqAiOptions";
+import CohereAiOptions from "@/components/LLMSelection/CohereAiOptions";
+import KoboldCPPOptions from "@/components/LLMSelection/KoboldCPPOptions";
+import TextGenWebUIOptions from "@/components/LLMSelection/TextGenWebUIOptions";
+import LiteLLMOptions from "@/components/LLMSelection/LiteLLMOptions";
 
 import LLMItem from "@/components/LLMSelection/LLMItem";
 import { CaretUpDown, MagnifyingGlass, X } from "@phosphor-icons/react";
@@ -151,6 +162,56 @@ export const AVAILABLE_LLM_PROVIDERS = [
     requiredConfig: ["GroqApiKey"],
   },
   {
+    name: "KoboldCPP",
+    value: "koboldcpp",
+    logo: KoboldCPPLogo,
+    options: (settings) => <KoboldCPPOptions settings={settings} />,
+    description: "Run local LLMs using koboldcpp.",
+    requiredConfig: [
+      "KoboldCPPModelPref",
+      "KoboldCPPBasePath",
+      "KoboldCPPTokenLimit",
+    ],
+  },
+  {
+    name: "Oobabooga Web UI",
+    value: "textgenwebui",
+    logo: TextGenWebUILogo,
+    options: (settings) => <TextGenWebUIOptions settings={settings} />,
+    description: "Run local LLMs using Oobabooga's Text Generation Web UI.",
+    requiredConfig: ["TextGenWebUIBasePath", "TextGenWebUITokenLimit"],
+  },
+  {
+    name: "Cohere",
+    value: "cohere",
+    logo: CohereLogo,
+    options: (settings) => <CohereAiOptions settings={settings} />,
+    description: "Run Cohere's powerful Command models.",
+    requiredConfig: ["CohereApiKey"],
+  },
+  {
+    name: "LiteLLM",
+    value: "litellm",
+    logo: LiteLLMLogo,
+    options: (settings) => <LiteLLMOptions settings={settings} />,
+    description: "Run LiteLLM's OpenAI compatible proxy for various LLMs.",
+    requiredConfig: ["LiteLLMBasePath"],
+  },
+  {
+    name: "Generic OpenAI",
+    value: "generic-openai",
+    logo: GenericOpenAiLogo,
+    options: (settings) => <GenericOpenAiOptions settings={settings} />,
+    description:
+      "Connect to any OpenAi-compatible service via a custom configuration",
+    requiredConfig: [
+      "GenericOpenAiBasePath",
+      "GenericOpenAiModelPref",
+      "GenericOpenAiTokenLimit",
+      "GenericOpenAiKey",
+    ],
+  },
+  {
     name: "Native",
     value: "native",
     logo: AnythingLLMIcon,
@@ -172,6 +233,7 @@ export default function GeneralLLMPreference() {
   const [searchMenuOpen, setSearchMenuOpen] = useState(false);
   const searchInputRef = useRef(null);
   const isHosted = window.location.hostname.includes("useanything.com");
+  const { t } = useTranslation();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -250,14 +312,11 @@ export default function GeneralLLMPreference() {
               <div className="w-full flex flex-col gap-y-1 pb-6 border-white border-b-2 border-opacity-10">
                 <div className="flex gap-x-4 items-center">
                   <p className="text-lg leading-6 font-bold text-white">
-                    LLM Preference
+                    {t("llm.title")}
                   </p>
                 </div>
                 <p className="text-xs leading-[18px] font-base text-white text-opacity-60">
-                  These are the credentials and settings for your preferred LLM
-                  chat & embedding provider. Its important these keys are
-                  current and correct or else AnythingLLM will not function
-                  properly.
+                  {t("llm.description")}
                 </p>
               </div>
               <div className="w-full justify-end flex">
@@ -271,7 +330,7 @@ export default function GeneralLLMPreference() {
                 )}
               </div>
               <div className="text-base font-bold text-white mt-6 mb-4">
-                LLM Provider
+                {t("llm.provider")}
               </div>
               <div className="relative">
                 {searchMenuOpen && (
@@ -281,9 +340,9 @@ export default function GeneralLLMPreference() {
                   />
                 )}
                 {searchMenuOpen ? (
-                  <div className="absolute top-0 left-0 w-full max-w-[640px] max-h-[310px] overflow-auto white-scrollbar min-h-[64px] bg-[#18181B] rounded-lg flex flex-col justify-between cursor-pointer border-2 border-[#46C8FF] z-20">
+                  <div className="absolute top-0 left-0 w-full max-w-[640px] max-h-[310px] overflow-auto white-scrollbar min-h-[64px] bg-dark-input rounded-lg flex flex-col justify-between cursor-pointer border-2 border-[#46C8FF] z-20">
                     <div className="w-full flex flex-col gap-y-1">
-                      <div className="flex items-center sticky top-0 border-b border-[#9CA3AF] mx-4 bg-[#18181B]">
+                      <div className="flex items-center sticky top-0 border-b border-[#9CA3AF] mx-4 bg-dark-input">
                         <MagnifyingGlass
                           size={20}
                           weight="bold"
@@ -304,7 +363,7 @@ export default function GeneralLLMPreference() {
                         <X
                           size={20}
                           weight="bold"
-                          className="cursor-pointer text-white hover:text-[#9CA3AF]"
+                          className="cursor-pointer text-white hover:text-x-button"
                           onClick={handleXButton}
                         />
                       </div>
@@ -328,22 +387,23 @@ export default function GeneralLLMPreference() {
                   </div>
                 ) : (
                   <button
-                    className="w-full max-w-[640px] h-[64px] bg-[#18181B] rounded-lg flex items-center p-[14px] justify-between cursor-pointer border-2 border-transparent hover:border-[#46C8FF] transition-all duration-300"
+                    className="w-full max-w-[640px] h-[64px] bg-dark-input rounded-lg flex items-center p-[14px] justify-between cursor-pointer border-2 border-transparent hover:border-[#46C8FF] transition-all duration-300"
                     type="button"
                     onClick={() => setSearchMenuOpen(true)}
                   >
                     <div className="flex gap-x-4 items-center">
                       <img
-                        src={selectedLLMObject.logo}
-                        alt={`${selectedLLMObject.name} logo`}
+                        src={selectedLLMObject?.logo || AnythingLLMIcon}
+                        alt={`${selectedLLMObject?.name} logo`}
                         className="w-10 h-10 rounded-md"
                       />
                       <div className="flex flex-col text-left">
                         <div className="text-sm font-semibold text-white">
-                          {selectedLLMObject.name}
+                          {selectedLLMObject?.name || "None selected"}
                         </div>
-                        <div className="mt-1 text-xs text-[#D2D5DB]">
-                          {selectedLLMObject.description}
+                        <div className="mt-1 text-xs text-description">
+                          {selectedLLMObject?.description ||
+                            "You need to select an LLM"}
                         </div>
                       </div>
                     </div>

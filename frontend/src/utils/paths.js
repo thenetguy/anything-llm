@@ -23,9 +23,6 @@ export default {
     vectorDatabase: () => {
       return "/onboarding/vector-database";
     },
-    customLogo: () => {
-      return "/onboarding/custom-logo";
-    },
     userSetup: () => {
       return "/onboarding/user-setup";
     },
@@ -101,6 +98,9 @@ export default {
     transcriptionPreference: () => {
       return "/settings/transcription-preference";
     },
+    audioPreference: () => {
+      return "/settings/audio-preference";
+    },
     embedder: {
       modelPreference: () => "/settings/embedding-preference",
       chunkingPreference: () => "/settings/text-splitter-preference",
@@ -117,6 +117,9 @@ export default {
     appearance: () => {
       return "/settings/appearance";
     },
+    agentSkills: () => {
+      return "/settings/agents";
+    },
     apiKeys: () => {
       return "/settings/api-keys";
     },
@@ -131,6 +134,14 @@ export default {
     },
     embedChats: () => {
       return `/settings/embed-chats`;
+    },
+    experimental: () => {
+      return `/settings/beta-features`;
+    },
+  },
+  experimental: {
+    liveDocumentSync: {
+      manage: () => `/settings/beta-features/live-document-sync/manage`,
     },
   },
 };

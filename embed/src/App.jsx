@@ -27,13 +27,22 @@ export default function App() {
   };
 
   const position = embedSettings.position || "bottom-right";
+  const windowWidth = embedSettings.windowWidth
+    ? `max-w-[${embedSettings.windowWidth}]`
+    : "max-w-[400px]";
+  const windowHeight = embedSettings.windowHeight
+    ? `max-h-[${embedSettings.windowHeight}]`
+    : "max-h-[700px]";
 
   return (
     <>
       <Head />
-      <div className={`fixed inset-0 z-50 ${isChatOpen ? "block" : "hidden"}`}>
+      <div
+        id="anything-llm-embed-chat-container"
+        className={`fixed inset-0 z-50 ${isChatOpen ? "block" : "hidden"}`}
+      >
         <div
-          className={`w-full h-full bg-white md:max-w-[400px] md:max-h-[700px] md:fixed md:bottom-0 md:right-0 md:mb-4 md:mr-4 md:rounded-2xl md:border md:border-gray-300 md:shadow-[0_4px_14px_rgba(0,0,0,0.25)] ${positionClasses[position]}`}
+          className={`${windowHeight} ${windowWidth} h-full w-full bg-white fixed bottom-0 right-0 mb-4 md:mr-4 rounded-2xl border border-gray-300 shadow-[0_4px_14px_rgba(0,0,0,0.25)] ${positionClasses[position]}`}
           id="anything-llm-chat"
         >
           {isChatOpen && (
@@ -47,6 +56,7 @@ export default function App() {
       </div>
       {!isChatOpen && (
         <div
+          id="anything-llm-embed-chat-button-container"
           className={`fixed bottom-0 ${positionClasses[position]} mb-4 z-50`}
         >
           <OpenButton
